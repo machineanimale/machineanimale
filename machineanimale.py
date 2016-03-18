@@ -6,7 +6,8 @@ import random
 import re
 import smtplib
 
-from app_secret import AWS_ACCESS, AWS_SECRET, AWS_S3_BUCKET, GMAIL_ADDR, GMAIL_PW
+from app_secret import AWS_ACCESS, AWS_SECRET, AWS_S3_BUCKET, \
+    GMAIL_ADDR, GMAIL_PW, ROOT_PATH, USERS
 import boto
 from boto.s3.key import Key as S3Key
 import yaml
@@ -17,18 +18,7 @@ GMAIL_SMTP = 'smtp.gmail.com'
 GMAIL_PORT = 587
 NAME_LIMIT = 5
 RUN_COUNTS = [1, 1, 1, 1, 2, 0, 1]
-ROOT_PATH = '/usr/local/etc/machineanimale'
 SHARED_LIST = 'animal_list.yaml'
-USERS = {
-    'tera': {
-        'source': 'tera_list.yaml',
-        'email_target': '5039280913@vtext.com',
-    },
-    'keith': {
-        'source': 'keith_list.yaml',
-        'email_target': '7185012272@mms.att.net',
-    },
-}
 
 
 def animal(animals, user_data, data_type):
