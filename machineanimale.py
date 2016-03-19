@@ -5,19 +5,19 @@ import os
 import random
 import re
 import smtplib
+import urllib2
 
-from app_secret import AWS_ACCESS, AWS_SECRET, AWS_S3_BUCKET, \
-    GMAIL_ADDR, GMAIL_PW, ROOT_PATH, USERS
-import boto
-from boto.s3.key import Key as S3Key
 import yaml
 
+from app_secret import ANIMAL_LIST_URL, AWS_ACCESS, AWS_SECRET, AWS_S3_BUCKET,\
+                       GMAIL_ADDR, GMAIL_PW, PLAYERS, ROOT_PATH
 
 DATA_TYPES = ['noun', 'adjective']
 GMAIL_SMTP = 'smtp.gmail.com'
 GMAIL_PORT = 587
+LOG_PATH = os.path.join(ROOT_PATH, 'log', 'machine_animale.log')
 NAME_LIMIT = 5
-RUN_COUNTS = [1, 1, 1, 1, 2, 0, 1]
+RUN_COUNTS = [1, 1, 1, 1, 2, 1, 1]
 SHARED_LIST = 'animal_list.yaml'
 
 
@@ -48,27 +48,45 @@ def animal(animals, user_data, data_type):
     return map(lambda s: s.replace('_', ' '), nickname)
 
 
-def date_resolve(date=None):
+def cache_yaml(yaml_dict, file_name):
 
     """
-    Resolve the date passed in to a string represented in the following form:
-       3/18/2016 -> "Friday, Mar. 18, 2016"
+    Caches a list of YAML data in case it cannot be retrieved from
+    Dropbox due to a network issue.
 
-    Kwargs:
-        date (datetime.datetime): the date to resolve, defaulting to None
+    Args:
+        yaml_dict (dict): the dictionary object to be cached
+        file_name (str): the basename of the cache file, without ext.
 
     Returns:
-        str: the date string resolvd from the date in question
+        bool: whether the cache operation succeeded.
     """
 
-    date = date or datetime.datetime.now()
-    days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-    months = ['Jan.', 'Feb.', 'Mar.', 'Apr.', 'May', 'Jun.',
-              'Jul.', 'Aug.', 'Sept.', 'Oct.', 'Nov.','Dec.']
+    file_name = file_name.split('/')[1]
+    file_destination = os.path.join(ROOT_PATH, '{}.yaml'.format(file_name))
+    try:
+        with open(file_destination, 'w') as out:
+            yaml.dump(yaml_dict, out)
+        return True
+    except IOError as e:
+        return False
 
-    day = days[date.weekday()]
-    month = months[date.month]
-    return '{}, {} {}, {}'.format(day, month, date.day, date.year)
+
+def dropbox_file(url):
+
+    """
+    Downloads a file and returns it as a dict object.
+
+    Args:
+        url (str): the url to download
+
+    Returns:
+        dict: the dictionary represented by the YAML file
+    """
+
+    dropbox_url = 'https://www.dropbox.com/s/{}.yaml?dl=1'.format(url)
+    req = urllib2.urlopen(dropbox_url)
+    return yaml.load(req.read())
 
 
 def email_client():
@@ -86,57 +104,86 @@ def email_client():
     return smtp_client
 
 
-def fetch_lists():
+def log_name_choices(player, choices):
 
     """
-    Reaches out to S3 and pulls the current word lists down to the local FS.
+    Utility method to log the chosen names for later retrieval.
+
+    Args:
+        player (str): the name of the player for whom names were chosen
+        choices (list[str]): the names sent to the player
     """
 
-    conn = boto.connect_s3(AWS_ACCESS, AWS_SECRET)
-    bucket = conn.get_bucket(AWS_S3_BUCKET)
-    keys = bucket.list()
-    for key in keys:
-        if re.search('list.yaml', key.key):
-            k = S3Key(bucket)
-            k.key = key.key
-            k.get_contents_to_filename(os.path.join(ROOT_PATH, key.key))
+    with open(LOG_PATH, 'a') as log_file:
+       timestamp = datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+       args = [timestamp, player, ';'.join(map(lambda c: ' '.join(c), choices))]
+       log_file.write('type=animals, date={}, player={}, value={}\n'.format(*args))
 
 
-def fetch():
+def retrieve_data(link):
 
     """
-    Reads in word lists and dispatches n animals to each person defined
-    in USERS. Messages are sent via SMS proxied through carrier email domains.
+    Retrieves data for a given link from Dropbox, if possible.
+    If not, it returns the local cache file, if possible.
+    If not, the program explodes, since there is no data.
 
-    If it is Sunday, each user's word lists, as well as the animal list, are
-    retrieved from S3, which creates a week-long update cycle.
+    Args:
+        link (str): the url_stub for the file to be fetched
+
+    Returns:
+        dict: the dict object represented by the link arg
     """
 
-    if datetime.datetime.now().weekday() == 6:
-        fetch_lists()
+    try:
+        data = dropbox_file(link)
+        cache_yaml(data, link)
+        return data
+    except Exception as e:
+        print str(e)
+        return retrieve_cached_yaml(link)
 
-    #mail_client = email_client()
 
-    with open(os.path.join(ROOT_PATH, SHARED_LIST)) as animal_file:
-        animals = yaml.load(animal_file)['animal']
+def retrieve_cached_yaml(file_name):
 
-    for user in USERS.values():
+    """
+    Retrieves cached YAML from disk. Used in the event that fetching the file
+    from Dropbox fails due to some error, such as network issues.
 
-        with open(os.path.join(ROOT_PATH, user['source']), 'r') as in_file:
-        p    data = yaml.load(in_file)
+    Args:
+        file_name (str): the name of the file to retrieve
 
-        nicknames = [animal(animals, data, random.choice(DATA_TYPES))
-                     for n in range(NAME_LIMIT)]
+    Returns:
+        dict: the dict represented by the YAML at the file's location
+    """
 
-        body = '\n'.join(map(lambda p: ' '.join(p), nicknames))
-        print body
-        return
-        #mail_client.sendmail(GMAIL_ADDR, user['email_target'], body)
+    file_name = file_name.split('/')[1]
+    file_location = os.path.join(ROOT_PATH, '{}.yaml'.format(file_name))
+    with open(file_location, 'r') as in_file:
+        yaml_dict = yaml.load(in_file)
+
+    return yaml_dict
 
 
 if __name__ == '__main__':
 
-    run_count = RUN_COUNTS[datetime.datetime.now().weekday()]
-    for i in range(run_count):
-        fetch()
+    for i in range(RUN_COUNTS[datetime.datetime.now().weekday()]):
+        """
+        Reads in word lists and dispatches n animals to two players defined
+        in PLAYERS. Messages are sent via SMS through carrier email domains.
+        """
 
+        animals = retrieve_data(ANIMAL_LIST_URL)['animals']
+        mail_client = email_client()
+
+        for player in random.sample(PLAYERS, 2):
+            link, email_target = player
+            player_name = link.split('_')[1]
+            data = retrieve_data(link)
+
+            player_animals = [animal(animals, data, random.choice(DATA_TYPES))
+                              for n in range(NAME_LIMIT)]
+
+            log_name_choices(player_name, player_animals)
+
+            body = '\n'.join(map(lambda p: ' '.join(p), player_animals))
+            mail_client.sendmail(GMAIL_ADDR, email_target, body)
