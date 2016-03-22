@@ -7,13 +7,42 @@ import re
 
 import yaml
 
-from app_secret import ANIMAL_LIST_URL, PLAYERS, ROOT_PATH
+from app_secret import ANIMAL_LIST_URL, GMAIL_ADDR, PLAYERS, ROOT_PATH
 import email_util
 import util
 
-DATA_TYPES = ['noun', 'adjective']
-DURATION = 5
-RUN_FREQUENCY = [1, 1, 1, 1, 2, 0, 1]
+
+class Game(object):
+
+    def __init__(self, data_types, animal_count, turn_count):
+        self.data_types = data_types
+        self.animals_count = animal_count
+        self.player_turns = turn_count
+        self._players = []
+
+    @property
+    def players(self):
+        return self._players
+
+    @players.setter
+    def players(self, player_list):
+        self._players = player_list
+
+    def play(self):
+
+        """
+        Plays the game. For each player in the game, the player will
+        have a turn for each number of turns for the day. In each turn,
+        the player will generate a number of animal names, and send them
+        to the opponent.
+        """
+
+        turns = self.player_turns[datetime.datetime.today().weekday()]
+        for player in self.players:
+            for turn in range(turns):
+                for animal in range(self.animals_count):
+                    player.animal()
+                player.send()
 
 
 class Player(object):
@@ -21,9 +50,11 @@ class Player(object):
     def __init__(self, player_info, animals):
         self.name, self.dropbox_file, self.sms_mail = player_info
         self.animals = animals
-        self.data = retrieve_data(util.dropbox_file(self.dropbox_file))
+        self.data = util.retrieve_data(self.dropbox_file)
         self.data_types = ['noun', 'adjective']
+        self.generated_animals = []
         self._opponent = None
+
 
     @property
     def opponent(self):
@@ -51,66 +82,48 @@ class Player(object):
         """
 
         animal = random.choice(self.animals)
-        # random.shuffle(self.animals)
-        # animal = self.animals.pop()
-
         data_type = random.choice(self.data_types)
-        data = [d for d in self.data[data_type]]
-
-        random.shuffle(data)
-        datum = data.pop()
-        self.data[data_type] = [d for d in data]
+        datum = random.choice(self.data[data_type])
 
         if data_type == 'noun':
-            nickname = '{} {}'.format([animal, datum])
+            nickname = '{} {}'.format(animal, datum)
         else:
-            nickname = '{} {}'.format([datum, animal])
+            nickname = '{} {}'.format(datum, animal)
 
-        return nickname.replace('_', ' ')
+        self.generated_animals.append(nickname.replace('_', ' '))
 
-
-    def play(self):
-
-        """
+    def send(self, reset=True):
 
         """
 
-        for i in range(DURATION):
-            self.generated_animals.append(self.animal())
+        """
 
         util.log_name_choices(self.opponent.name, self.generated_animals)
-        self.send_animals()
-
-    def send_animals(self):
-
-        """
-
-        """
-
         body = '\n'.join(self.generated_animals)
 
-        smtp_client = email_util.client()
-        smtp_client.sendmail(GMAIL_ADDR, self.opponent.sms_mail, body)
-        smtp_client.quit()
+        email_util.send(self.opponent.sms_mail, body)
 
-        self.sent_animals = [a for a in self.generated_animals]
-        self.generated_animals = []
+        if reset:
+            self.generated_animals = []
 
 
 if __name__ == '__main__':
 
-    for i in range(RUN_COUNTS[datetime.datetime.now().weekday()]):
-        """
-        Reads in word lists and dispatches n animals to two players defined
-        in PLAYERS. Messages are sent via SMS through carrier email domains.
-        """
+    """
+    Reads in word lists and dispatches n animals to two players defined
+    in PLAYERS. Messages are sent via SMS through carrier email domains.
+    """
+    DATA_TYPES = ['adjective', 'noun']
+    ANIMAL_COUNT = 5
+    TURN_COUNT = [1, 1, 1, 1, 2, 0, 1]
 
-        animals = util.retrieve_data(ANIMAL_LIST_URL)['animals']
+    animals = util.retrieve_data(ANIMAL_LIST_URL)['animals']
 
-        players = map(lambda p: Player(p, animals), random.sample(PLAYERS,2))
-        players[0].opponent = players[1]
-        players[1].opponent = players[0]
+    game = Game(DATA_TYPES, ANIMAL_COUNT, TURN_COUNT)
 
-        for i in range(RUN_FREQUENCY[datetime.datetime.now().weekday()]):
-            for player in players:
-                player.play()
+    players = map(lambda p: Player(p, animals), random.sample(PLAYERS,2))
+    players[0].opponent = players[1]
+    players[1].opponent = players[0]
+
+    game.players = players
+    game.play()
