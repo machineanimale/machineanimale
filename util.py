@@ -31,6 +31,43 @@ def cache_yaml(yaml_dict, file_name):
         return False
 
 
+def dropbox_file(url):
+
+    """
+    Downloads a file and returns it as a dict object.
+
+    Args:
+        url (str): the url to download
+
+    Returns:
+        dict: the dictionary represented by the YAML file
+    """
+
+    dropbox_url = 'https://www.dropbox.com/s/{}.yaml?dl=1'.format(url)
+    req = urllib2.urlopen(dropbox_url)
+    return yaml.load(req.read())
+
+
+def log_name_choices(player, choices):
+
+    """
+    Utility method to log the chosen names for later retrieval.
+
+    Args:
+        player (str): the name of the player for whom names were chosen
+        choices (list[str]): the names sent to the player
+    """
+
+    log_path = os.path.join(ROOT_PATH, 'log', 'machine_animale.log')
+    if not os.path.exists(os.path.dirname(log_path)):
+        os.makedirs(os.path.dirname(log_path))
+
+    with open(log_path, 'a') as log_file:
+       timestamp = datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+       args = [timestamp, player, ';'.join(map(lambda c: ' '.join(c), choices))]
+       log_file.write('type=animals, date={}, player={}, value={}\n'.format(*args))
+
+
 def retrieve_data(link):
 
     """
@@ -74,40 +111,3 @@ def retrieve_cached_yaml(file_name):
         yaml_dict = yaml.load(in_file)
 
     return yaml_dict
-
-
-def dropbox_file(url):
-
-    """
-    Downloads a file and returns it as a dict object.
-
-    Args:
-        url (str): the url to download
-
-    Returns:
-        dict: the dictionary represented by the YAML file
-    """
-
-    dropbox_url = 'https://www.dropbox.com/s/{}.yaml?dl=1'.format(url)
-    req = urllib2.urlopen(dropbox_url)
-    return yaml.load(req.read())
-
-
-def log_name_choices(player, choices):
-
-    """
-    Utility method to log the chosen names for later retrieval.
-
-    Args:
-        player (str): the name of the player for whom names were chosen
-        choices (list[str]): the names sent to the player
-    """
-
-    log_path = os.path.join(ROOT_PATH, 'log', 'machine_animale.log')
-    if not os.path.exists(os.path.dirname(log_path)):
-        os.makedirs(os.path.dirname(log_path))
-
-    with open(log_path, 'a') as log_file:
-       timestamp = datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
-       args = [timestamp, player, ';'.join(map(lambda c: ' '.join(c), choices))]
-       log_file.write('type=animals, date={}, player={}, value={}\n'.format(*args))
