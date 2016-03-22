@@ -15,8 +15,8 @@ import util
 class Game(object):
 
     def __init__(self, data_types, animal_count, turn_count):
-        self.data_types = data_types
         self.animals_count = animal_count
+        self.pairing_types = ['adjective', 'noun']
         self.player_turns = turn_count
         self._players = []
 
@@ -40,9 +40,9 @@ class Game(object):
         turns = self.player_turns[datetime.datetime.today().weekday()]
         for player in self.players:
             for turn in range(turns):
-                for animal in range(self.animals_count):
-                    player.animal()
-                player.send()
+                animals = [player.animal(random.choice(self.pairing_types))
+                           for i in range(self.animals_count)]
+                player.send(animals)
 
 
 class Player(object):
@@ -51,8 +51,6 @@ class Player(object):
         self.name, self.dropbox_file, self.sms_mail = player_info
         self.animals = animals
         self.data = util.retrieve_data(self.dropbox_file)
-        self.data_types = ['noun', 'adjective']
-        self.generated_animals = []
         self._opponent = None
 
 
@@ -64,16 +62,14 @@ class Player(object):
     def opponent(self, value):
         self._opponent = value
 
-    def animal(self):
+    def animal(self, pairing_type):
 
         """
         Returns an animal name given a list of animals, a user's data, and
         a data type, either noun or adjective.
 
         Args:
-            animals (list[str]): a list of animals to choose from
-            user_data (dict): the user's noun/adjective dictionary
-            data_type (str): the type of word to select, either 'noun' or 'adj'
+            pairing_type (str): the type of word to select, either 'noun' or 'adj'
 
         Returns:
             str: the animal's name, in the form of either:
@@ -82,29 +78,23 @@ class Player(object):
         """
 
         animal = random.choice(self.animals)
-        data_type = random.choice(self.data_types)
-        datum = random.choice(self.data[data_type])
+        paired_word = random.choice(self.data[pairing_type])
 
-        if data_type == 'noun':
-            nickname = '{} {}'.format(animal, datum)
+        if pairing_type == 'noun':
+            nickname = '{} {}'.format(animal, paired_word)
         else:
-            nickname = '{} {}'.format(datum, animal)
+            nickname = '{} {}'.format(paired_word, animal)
 
-        self.generated_animals.append(nickname.replace('_', ' '))
+        return nickname.replace('_', ' ')
 
-    def send(self, reset=True):
-
-        """
+    def send(self, animals):
 
         """
 
-        util.log_name_choices(self.opponent.name, self.generated_animals)
-        body = '\n'.join(self.generated_animals)
+        """
 
-        email_util.send(self.opponent.sms_mail, body)
-
-        if reset:
-            self.generated_animals = []
+        util.log_name_choices(self.opponent.name, animals)
+        email_util.send(self.opponent.sms_mail, '\n'.join(animals))
 
 
 if __name__ == '__main__':
