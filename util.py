@@ -64,7 +64,7 @@ def log_name_choices(player, choices):
 
     with open(log_path, 'a') as log_file:
        timestamp = datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
-       args = [timestamp, player, ';'.join(map(lambda c: ' '.join(c), choices))]
+       args = [timestamp, player, ';'.join(choices)]
        log_file.write('type=animals, date={}, player={}, value={}\n'.format(*args))
 
 
