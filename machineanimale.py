@@ -4,139 +4,116 @@ import datetime
 import os
 import random
 import re
-import smtplib
 
-from app_secret import AWS_ACCESS, AWS_SECRET, AWS_S3_BUCKET, \
-    GMAIL_ADDR, GMAIL_PW, ROOT_PATH, USERS
-import boto
-from boto.s3.key import Key as S3Key
 import yaml
 
-
-DATA_TYPES = ['noun', 'adjective']
-GMAIL_SMTP = 'smtp.gmail.com'
-GMAIL_PORT = 587
-NAME_LIMIT = 5
-RUN_COUNTS = [1, 1, 1, 1, 2, 0, 1]
-SHARED_LIST = 'animal_list.yaml'
+from app_secret import ANIMAL_LIST_URL, GMAIL_ADDR, PLAYERS, ROOT_PATH
+import email_util
+import util
 
 
-def animal(animals, user_data, data_type):
+class Game(object):
 
-    """
-    Returns an animal name given a list of animals, a user's data, and
-    a data type, either noun or adjective.
+    def __init__(self, data_types, animal_count, turn_count):
+        self.animals_count = animal_count
+        self.pairing_types = ['adjective', 'noun']
+        self.player_turns = turn_count
+        self._players = []
 
-    Args:
-        animals (list[str]): a list of animals to choose from
-        user_data (dict): the user's noun/adjective dictionary
-        data_type (str): the type of word to select, either 'noun' or 'adj'
+    @property
+    def players(self):
+        return self._players
 
-    Returns:
-        str: the animal's name, in the form of either:
-            'animal noun' (i.e., hawk missle)
-            'adjective animal' (i.e., instrumental squid)
-    """
+    @players.setter
+    def players(self, player_list):
+        self._players = player_list
 
-    animal = random.choice(animals)
-    datum = random.choice(user_data[data_type])
-    if data_type == 'noun':
-        nickname = [animal, datum]
-    else:
-        nickname = [datum, animal]
+    def play(self):
 
-    return map(lambda s: s.replace('_', ' '), nickname)
+        """
+        Plays the game. For each player in the game, the player will
+        have a turn for each number of turns for the day. In each turn,
+        the player will generate a number of animal names, and send them
+        to the opponent.
+        """
 
-
-def date_resolve(date=None):
-
-    """
-    Resolve the date passed in to a string represented in the following form:
-       3/18/2016 -> "Friday, Mar. 18, 2016"
-
-    Kwargs:
-        date (datetime.datetime): the date to resolve, defaulting to None
-
-    Returns:
-        str: the date string resolvd from the date in question
-    """
-
-    date = date or datetime.datetime.now()
-    days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-    months = ['Jan.', 'Feb.', 'Mar.', 'Apr.', 'May', 'Jun.',
-              'Jul.', 'Aug.', 'Sept.', 'Oct.', 'Nov.','Dec.']
-
-    day = days[date.weekday()]
-    month = months[date.month]
-    return '{}, {} {}, {}'.format(day, month, date.day, date.year)
+        turns = self.player_turns[datetime.datetime.today().weekday()]
+        for player in self.players:
+            for turn in range(turns):
+                animals = [player.animal(random.choice(self.pairing_types))
+                           for i in range(self.animals_count)]
+                player.send(animals)
 
 
-def email_client():
+class Player(object):
 
-    """
-    Returns an smtplib.SMTP client object to be used with the email relay.
-    Uses Gmail's SMTP server (with TLS) and login authentication.
-
-    Returns:
-        smtplib.SMTP: the mail client
-    """
-    smtp_client = smtplib.SMTP(GMAIL_SMTP, GMAIL_PORT)
-    smtp_client.starttls()
-    smtp_client.login(GMAIL_ADDR, GMAIL_PW)
-    return smtp_client
+    def __init__(self, player_info, animals):
+        self.name, self.dropbox_file, self.sms_mail = player_info
+        self.animals = animals
+        self.data = util.retrieve_data(self.dropbox_file)
+        self._opponent = None
 
 
-def fetch_lists():
+    @property
+    def opponent(self):
+        return self._opponent
 
-    """
-    Reaches out to S3 and pulls the current word lists down to the local FS.
-    """
+    @opponent.setter
+    def opponent(self, value):
+        self._opponent = value
 
-    conn = boto.connect_s3(AWS_ACCESS, AWS_SECRET)
-    bucket = conn.get_bucket(AWS_S3_BUCKET)
-    keys = bucket.list()
-    for key in keys:
-        if re.search('list.yaml', key.key):
-            k = S3Key(bucket)
-            k.key = key.key
-            k.get_contents_to_filename(os.path.join(ROOT_PATH, key.key))
+    def animal(self, pairing_type):
 
+        """
+        Returns an animal name given a list of animals, a user's data, and
+        a data type, either noun or adjective.
 
-def fetch():
+        Args:
+            pairing_type (str): the type of word to select, either 'noun' or 'adj'
 
-    """
-    Reads in word lists and dispatches n animals to each person defined
-    in USERS. Messages are sent via SMS proxied through carrier email domains.
+        Returns:
+            str: the animal's name, in the form of either:
+                'animal noun' (i.e., hawk missle)
+                'adjective animal' (i.e., instrumental squid)
+        """
 
-    If it is Sunday, each user's word lists, as well as the animal list, are
-    retrieved from S3, which creates a week-long update cycle.
-    """
+        animal = random.choice(self.animals)
+        paired_word = random.choice(self.data[pairing_type])
 
-    if datetime.datetime.now().weekday() == 6:
-        fetch_lists()
+        if pairing_type == 'noun':
+            nickname = '{} {}'.format(animal, paired_word)
+        else:
+            nickname = '{} {}'.format(paired_word, animal)
 
-    #mail_client = email_client()
+        return nickname.replace('_', ' ')
 
-    with open(os.path.join(ROOT_PATH, SHARED_LIST)) as animal_file:
-        animals = yaml.load(animal_file)['animal']
+    def send(self, animals):
 
-    for user in USERS.values():
+        """
 
-        with open(os.path.join(ROOT_PATH, user['source']), 'r') as in_file:
-        p    data = yaml.load(in_file)
+        """
 
-        nicknames = [animal(animals, data, random.choice(DATA_TYPES))
-                     for n in range(NAME_LIMIT)]
-
-        body = '\n'.join(map(lambda p: ' '.join(p), nicknames))
-        print body
-        return
-        #mail_client.sendmail(GMAIL_ADDR, user['email_target'], body)
+        util.log_name_choices(self.opponent.name, animals)
+        email_util.send(self.opponent.sms_mail, '\n'.join(animals))
 
 
 if __name__ == '__main__':
 
-    run_count = RUN_COUNTS[datetime.datetime.now().weekday()]
-    for i in range(run_count):
-        fetch()
+    """
+    Reads in word lists and dispatches n animals to two players defined
+    in PLAYERS. Messages are sent via SMS through carrier email domains.
+    """
+    DATA_TYPES = ['adjective', 'noun']
+    ANIMAL_COUNT = 5
+    TURN_COUNT = [1, 1, 1, 1, 2, 0, 1]
 
+    animals = util.retrieve_data(ANIMAL_LIST_URL)['animals']
+
+    game = Game(DATA_TYPES, ANIMAL_COUNT, TURN_COUNT)
+
+    players = map(lambda p: Player(p, animals), random.sample(PLAYERS,2))
+    players[0].opponent = players[1]
+    players[1].opponent = players[0]
+
+    game.players = players
+    game.play()
